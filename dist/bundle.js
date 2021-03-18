@@ -1,21 +1,55 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
+var ffmpeg;
+
+function ExtractAudioFFMPEG(file, infoFunc) {
+    const info = (msg) => {
+        if (infoFunc !== undefined) {
+            infoFunc(msg);
+        }
+    };
+    return new Promise(function (done, failed) {
+        var newFile;
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const transcode = async (file) => {
+            if (ffmpeg === undefined) {
+                const ffmpegTmp = createFFmpeg({ log: true });
+                info('Loading ffmpeg-core.js');
+                await ffmpegTmp.load();
+                info('Loaded ffmpeg-core.js');
+                ffmpeg = ffmpegTmp;
+            }
+            const { name } = file;
+            ffmpeg.FS('writeFile', name, await fetchFile(file));
+            info('Start copy audio');
+            await ffmpeg.run('-i', name, '-map', '0:a', '-acodec', 'copy', 'output.mp4');
+            info('Preparing file');
+            const data = ffmpeg.FS('readFile', 'output.mp4');
+            newFile = new Blob([data.buffer], { type: 'audio/mp4', name: "audio.mp4" })
+            info('Done');
+            done(newFile);
+        }
+        transcode(file);
+    });
+}
+
+module.exports = ExtractAudioFFMPEG;
+},{}],2:[function(require,module,exports){
 const prettyBytes = require('./../node_modules/pretty-bytes/index.js');
 const audioBufferToWav = require('./../node_modules/audiobuffer-to-wav/index.js');
+const audioFFMPEG = require('./audio-ffmpeg.js');
 
 var file;
 var newFile;
 var sampleRate = 16000;
 var working = false;
-var ffmpeg;
 
 function save(file) {
     if (file) {
-        var a = document.createElement('a');
-        var url = window.URL.createObjectURL(file);
+        const a = document.createElement('a');
+        const url = window.URL.createObjectURL(file);
         a.href = url;
         a.download = "olia";
         a.click();
-        document.removeChild(a);
         window.URL.revokeObjectURL(url);
     } else {
         console.log("no file");
@@ -24,7 +58,11 @@ function save(file) {
 
 function setResultAudio(file) {
     var audio = document.getElementById('result');
-    audio.src = window.URL.createObjectURL(file);
+    if (file !== undefined){
+        audio.src = window.URL.createObjectURL(file);
+    } else {
+        audio.src = '';
+    }
 
 }
 
@@ -167,30 +205,26 @@ function loadFile() {
 function extractFFMPEG() {
     working = true;
     updateControls();
-    const { createFFmpeg, fetchFile } = FFmpeg;
-    const transcode = async ( file ) => {
-        const message = document.getElementById('progress');
-        if (ffmpeg == undefined){
-            const ffmpegTmp = createFFmpeg({ log: true });
-            message.innerHTML = 'Loading ffmpeg-core.js';
-            await ffmpegTmp.load();
-            ffmpeg = ffmpegTmp;
+    const message = document.getElementById('progress');
+    const info = async (msg) => {
+        message.innerHTML = msg;
+    }
+    audioFFMPEG(file, info).then(
+        (file) => {
+            newFile = file;
+            console.log(newFile);
+            setResultAudio(newFile);
+            working = false;
+            updateControls()
+            console.log("Done");
         }
-        const { name } = file;
-        ffmpeg.FS('writeFile', name, await fetchFile(file));
-        message.innerHTML = 'Start transcoding';
-        await ffmpeg.run('-i', name, '-map', '0:a', '-acodec', 'copy', 'output.mp4');
-        message.innerHTML = 'Completed transcoding';
-        const data = ffmpeg.FS('readFile', 'output.mp4');
-
-        newFile = new Blob([data.buffer], { type: 'audio/mp4' , name: "audio.mp4" })
-        console.log(newFile);
+    ).catch(err => {
+        newFile = undefined;
         setResultAudio(newFile);
         working = false;
         updateControls()
         console.log("Done");
-    }
-    transcode(file);
+    });
 }
 
 function initEvent() {
@@ -222,7 +256,7 @@ initEvent();
 updateControls();
 console.log("Loaded")
 
-},{"./../node_modules/audiobuffer-to-wav/index.js":2,"./../node_modules/pretty-bytes/index.js":3}],2:[function(require,module,exports){
+},{"./../node_modules/audiobuffer-to-wav/index.js":3,"./../node_modules/pretty-bytes/index.js":4,"./audio-ffmpeg.js":1}],3:[function(require,module,exports){
 module.exports = audioBufferToWav
 function audioBufferToWav (buffer, opt) {
   opt = opt || {}
@@ -318,7 +352,7 @@ function writeString (view, offset, string) {
   }
 }
 
-},{}],3:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 'use strict';
 
 const BYTE_UNITS = [
@@ -438,4 +472,4 @@ module.exports = (number, options) => {
 	return prefix + numberString + ' ' + unit;
 };
 
-},{}]},{},[1]);
+},{}]},{},[2]);
