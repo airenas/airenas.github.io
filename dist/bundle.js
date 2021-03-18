@@ -1,12 +1,12 @@
 (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-const prettyBytes = require ('./../node_modules/pretty-bytes/index.js');
-const audioBufferToWav = require ('./../node_modules/audiobuffer-to-wav/index.js');
+const prettyBytes = require('./../node_modules/pretty-bytes/index.js');
+const audioBufferToWav = require('./../node_modules/audiobuffer-to-wav/index.js');
 
-var data;
 var file;
 var newFile;
 var sampleRate = 16000;
 var working = false;
+var ffmpeg;
 
 function save(file) {
     if (file) {
@@ -36,6 +36,7 @@ function getBuffer(resolve) {
     }
     reader.readAsArrayBuffer(file);
 }
+
 
 function extractWAV() {
     working = true;
@@ -148,17 +149,6 @@ function audioBufferToIntArray(abuffer) {
     return buffer
 }
 
-function getAudioTrack(tracks) {
-    for (var i = 0; i < tracks.length; i++) {
-        console.log(tracks[i], i, tracks[i].type);
-        if (tracks[i].type === "audio") {
-            console.log("found Audio track")
-            return tracks[i]
-        }
-    }
-    return null;
-}
-
 function loadFile() {
     var reader = new FileReader();
     if (input.files) {
@@ -168,11 +158,39 @@ function loadFile() {
         reader.onload = function (e) {
             var audio = document.getElementById('audio');
             audio.src = e.target.result;
-                data = e.target.result;
         }
         reader.readAsDataURL(file);
     }
     updateControls();
+}
+
+function extractFFMPEG() {
+    working = true;
+    updateControls();
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const transcode = async ( file ) => {
+        const message = document.getElementById('progress');
+        if (ffmpeg == undefined){
+            const ffmpegTmp = createFFmpeg({ log: true });
+            message.innerHTML = 'Loading ffmpeg-core.js';
+            await ffmpegTmp.load();
+            ffmpeg = ffmpegTmp;
+        }
+        const { name } = file;
+        ffmpeg.FS('writeFile', name, await fetchFile(file));
+        message.innerHTML = 'Start transcoding';
+        await ffmpeg.run('-i', name, '-map', '0:a', '-acodec', 'copy', 'output.mp4');
+        message.innerHTML = 'Completed transcoding';
+        const data = ffmpeg.FS('readFile', 'output.mp4');
+
+        newFile = new Blob([data.buffer], { type: 'audio/mp4' , name: "audio.mp4" })
+        console.log(newFile);
+        setResultAudio(newFile);
+        working = false;
+        updateControls()
+        console.log("Done");
+    }
+    transcode(file);
 }
 
 function initEvent() {
@@ -180,6 +198,7 @@ function initEvent() {
     document.getElementById('btnMP3').onclick = extractMP3;
     document.getElementById('btnSave').onclick = function () { save(newFile) }
     document.getElementById('input').onchange = loadFile;
+    document.getElementById('btnFFMPEG').onclick = extractFFMPEG;
 }
 
 var working = false;
@@ -187,13 +206,14 @@ var working = false;
 function updateControls() {
     document.getElementById('btnWAV').disabled = working || !(file && file.size > 0);
     document.getElementById('btnMP3').disabled = working || !(file && file.size > 0);
+    document.getElementById('btnFFMPEG').disabled = working || !(file && file.size > 0);
     document.getElementById('btnSave').disabled = working || !(newFile && newFile.size > 0);
     document.getElementById('spanLen').innerHTML = ''
-    if (file && file.size > 0){
+    if (file && file.size > 0) {
         document.getElementById('spanLen').innerHTML = prettyBytes(file.size)
     }
     document.getElementById('spanLenResult').innerHTML = ''
-    if (newFile && newFile.size > 0){
+    if (newFile && newFile.size > 0) {
         document.getElementById('spanLenResult').innerHTML = prettyBytes(newFile.size)
     }
 }
